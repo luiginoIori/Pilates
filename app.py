@@ -82,10 +82,10 @@ class MockDatabase:
     def get_equipment(self):
         """Retorna equipamentos simulados"""
         return [
-            {"id": 1, "name": "Reformer 1"},
-            {"id": 2, "name": "Cadillac 1"},
-            {"id": 3, "name": "Chair 1"},
-            {"id": 4, "name": "Barrel 1"},
+            {"id": 1, "name": "Reformer 1", "description": "Equipamento principal para exercícios de Pilates"},
+            {"id": 2, "name": "Cadillac 1", "description": "Mesa com barras e molas para exercícios avançados"},
+            {"id": 3, "name": "Chair 1", "description": "Cadeira de Pilates para fortalecimento"},
+            {"id": 4, "name": "Barrel 1", "description": "Barril para exercícios de flexibilidade"},
         ]
     
     def get_appointment_by_details(self, client_id, date, time):
@@ -135,6 +135,21 @@ class MockDatabase:
     def gerar_appointments_cliente(self, client_id, dias_horarios):
         """Simula geração de appointments para cliente"""
         return len(dias_horarios) * 12  # Simula 12 appointments por dia selecionado
+    
+    def delete_equipment(self, equipment_id):
+        """Simula exclusão de equipamento"""
+        return True
+    
+    def get_equipment_sequences(self, equipment_id):
+        """Retorna sequências de um equipamento"""
+        return [
+            {"id": 1, "name": "Sequência Básica", "description": "Exercícios básicos"},
+            {"id": 2, "name": "Sequência Avançada", "description": "Exercícios avançados"},
+        ]
+    
+    def delete_equipment_sequence(self, sequence_id):
+        """Simula exclusão de sequência de equipamento"""
+        return True
 
 # Instância global do banco simulado
 db = MockDatabase()
@@ -2635,8 +2650,9 @@ def equipment_tab():
                 
                 with col1:
                     st.write(f"**Nome:** {equip['name']}")
-                    if equip['description']:
-                        st.write(f"**Descrição:** {equip['description']}")
+                    description = equip.get('description', '')
+                    if description:
+                        st.write(f"**Descrição:** {description}")
                     else:
                         st.write("**Descrição:** Não informada")
                 
