@@ -165,7 +165,8 @@ class MockDatabase:
                 "data_criacao": "2025-10-01",
                 "tipo_plano": "Mensalidade",
                 "quantidade": 1,
-                "data_pagamento": None
+                "data_pagamento": None,
+                "observacoes": "Pagamento via PIX"
             },
             {
                 "id": 2,
@@ -178,7 +179,8 @@ class MockDatabase:
                 "data_criacao": "2025-11-01",
                 "tipo_plano": "Mensalidade",
                 "quantidade": 1,
-                "data_pagamento": None
+                "data_pagamento": None,
+                "observacoes": ""
             },
             {
                 "id": 3,
@@ -191,7 +193,8 @@ class MockDatabase:
                 "data_criacao": "2025-09-01",
                 "tipo_plano": "Mensalidade",
                 "quantidade": 1,
-                "data_pagamento": "2025-09-15"
+                "data_pagamento": "2025-09-15",
+                "observacoes": "Pagamento antecipado"
             }
         ]
         if client_id:
