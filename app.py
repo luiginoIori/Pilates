@@ -150,6 +150,69 @@ class MockDatabase:
     def delete_equipment_sequence(self, sequence_id):
         """Simula exclusão de sequência de equipamento"""
         return True
+    
+    def get_contas_receber(self, client_id=None):
+        """Retorna contas a receber simuladas"""
+        sample_contas = [
+            {
+                "id": 1,
+                "client_id": 2,
+                "client_name": "Cliente Demo",
+                "valor": 300.00,
+                "data_vencimento": "2025-11-01",
+                "status": "pendente",
+                "descricao": "Mensalidade Outubro",
+                "data_criacao": "2025-10-01"
+            },
+            {
+                "id": 2,
+                "client_id": 2,
+                "client_name": "Cliente Demo", 
+                "valor": 300.00,
+                "data_vencimento": "2025-12-01",
+                "status": "pendente",
+                "descricao": "Mensalidade Novembro",
+                "data_criacao": "2025-11-01"
+            }
+        ]
+        if client_id:
+            return [conta for conta in sample_contas if conta["client_id"] == client_id]
+        return sample_contas
+    
+    def get_receitas_pagas(self):
+        """Retorna receitas pagas simuladas"""
+        return [
+            {
+                "id": 1,
+                "client_id": 2,
+                "client_name": "Cliente Demo",
+                "valor": 300.00,
+                "data_pagamento": "2025-09-15",
+                "descricao": "Mensalidade Setembro",
+                "metodo_pagamento": "PIX"
+            }
+        ]
+    
+    def get_despesas(self):
+        """Retorna despesas simuladas"""
+        return [
+            {
+                "id": 1,
+                "descricao": "Aluguel do espaço",
+                "valor": 1500.00,
+                "data": "2025-10-01",
+                "categoria": "Aluguel",
+                "status": "pago"
+            },
+            {
+                "id": 2,
+                "descricao": "Energia elétrica",
+                "valor": 200.00,
+                "data": "2025-10-15",
+                "categoria": "Utilities",
+                "status": "pago"
+            }
+        ]
 
 # Instância global do banco simulado
 db = MockDatabase()
