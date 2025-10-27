@@ -1,0 +1,85 @@
+                    st.markdown("---")
+                    st.subheader("💰 Informações Financeiras")
+                    
+                    col_fin1, col_fin2 = st.columns(2)
+                    
+                    with col_fin1:
+                        valor_mensalidade = st.number_input(
+                            "Valor (R$):",
+                            min_value=0.0,
+                            value=150.0,
+                            step=10.0,
+                            key=f"valor_{client['id']}"
+                        )
+                        
+                        col_check1, col_check2 = st.columns(2)
+                        with col_check1:
+                            tipo_fisio = st.checkbox(
+                                "✅ Fisioterapia",
+                                key=f"fisio_{client['id']}"
+                            )
+                        with col_check2:
+                            tipo_pilates = st.checkbox(
+                                "✅ Pilates",
+                                key=f"pilates_{client['id']}",
+                                value=True
+                            )
+                    
+                    with col_fin2:
+                        if tipo_fisio:
+                            qtd_sessoes_fisio = st.number_input(
+                                "Quantidade de Sessões (Fisio):",
+                                min_value=1,
+                                value=8,
+                                step=1,
+                                key=f"qtd_fisio_{client['id']}"
+                            )
+                        else:
+                            qtd_sessoes_fisio = 0
+                        
+                        if tipo_pilates:
+                            col_p1, col_p2 = st.columns(2)
+                            with col_p1:
+                                qtd_sessoes_pilates = st.number_input(
+                                    "Qtd Sessões (Pilates):",
+                                    min_value=1,
+                                    value=12,
+                                    step=1,
+                                    key=f"qtd_pilates_{client['id']}"
+                                )
+                            with col_p2:
+                                qtd_meses = st.number_input(
+                                    "Qtd Meses:",
+                                    min_value=1,
+                                    value=1,
+                                    step=1,
+                                    key=f"qtd_meses_{client['id']}"
+                                )
+                        else:
+                            qtd_sessoes_pilates = 0
+                            qtd_meses = 0
+                    
+                    # Botão para criar conta a receber
+                    if st.checkbox("💾 Criar conta a receber com estas informações", key=f"criar_conta_{client['id']}"):
+                        data_vencimento = st.date_input(
+                            "Data de Vencimento:",
+                            value=date.today(),
+                            key=f"venc_{client['id']}"
+                        )
+                        
+                        if tipo_fisio and not tipo_pilates:
+                            tipo_plano = "Fisioterapia"
+                            quantidade = qtd_sessoes_fisio
+                        elif tipo_pilates and not tipo_fisio:
+                            tipo_plano = "Pilates"
+                            quantidade = qtd_meses
+                        elif tipo_fisio and tipo_pilates:
+                            tipo_plano = "Fisioterapia + Pilates"
+                            quantidade = max(qtd_sessoes_fisio, qtd_meses)
+                        else:
+                            tipo_plano = "Mensalidade"
+                            quantidade = 1
+                        
+                        st.info(f"📋 Tipo: {tipo_plano} | Valor: R$ {valor_mensalidade:.2f} | Quantidade: {quantidade}")
+                    
+                    st.markdown("---")
