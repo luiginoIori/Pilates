@@ -240,6 +240,82 @@ class MockDatabase:
     def delete_conta_receber(self, conta_id):
         """Simula exclusão de conta a receber"""
         return True
+    
+    def create_conta_receber(self, client_id, valor, data_vencimento, descricao, tipo_plano="Mensalidade", quantidade=1):
+        """Simula criação de conta a receber"""
+        return True
+    
+    def delete_client(self, client_id):
+        """Simula exclusão de cliente"""
+        return True
+    
+    def update_client(self, client_id, name, phone, email, medical_history):
+        """Simula atualização de cliente"""
+        return True
+    
+    def create_equipment(self, name, description):
+        """Simula criação de equipamento"""
+        return True
+    
+    def update_equipment(self, equipment_id, name, description):
+        """Simula atualização de equipamento"""
+        return True
+    
+    def create_equipment_sequence(self, name, day_number, equipment_id):
+        """Simula criação de sequência de equipamento"""
+        return True
+    
+    def get_parcelas_pagar(self):
+        """Retorna parcelas a pagar simuladas"""
+        return [
+            {
+                "id": 1,
+                "descricao": "Aluguel - Novembro",
+                "valor": 1500.00,
+                "data_vencimento": "2025-11-05",
+                "status": "pendente",
+                "categoria": "Aluguel",
+                "data_pagamento": None
+            },
+            {
+                "id": 2,
+                "descricao": "Energia - Outubro",
+                "valor": 200.00,
+                "data_vencimento": "2025-10-20",
+                "status": "pago",
+                "categoria": "Utilities",
+                "data_pagamento": "2025-10-18"
+            }
+        ]
+    
+    def create_conta_pagar(self, descricao, valor, data_vencimento, categoria):
+        """Simula criação de conta a pagar"""
+        return True
+    
+    def update_pagamento_pagar(self, parcela_id, data_pagamento):
+        """Simula atualização de pagamento de conta a pagar"""
+        return True
+    
+    def delete_parcela_pagar(self, parcela_id):
+        """Simula exclusão de parcela a pagar"""
+        return True
+    
+    def get_fluxo_caixa(self, data_inicio, data_fim):
+        """Retorna fluxo de caixa simulado"""
+        return {
+            "entradas": [
+                {"data": "2025-10-15", "descricao": "Mensalidade Cliente", "valor": 300.00},
+                {"data": "2025-10-20", "descricao": "Sessão Avulsa", "valor": 80.00},
+            ],
+            "saidas": [
+                {"data": "2025-10-01", "descricao": "Aluguel", "valor": 1500.00},
+                {"data": "2025-10-15", "descricao": "Energia", "valor": 200.00},
+            ],
+            "saldo_inicial": 5000.00,
+            "total_entradas": 380.00,
+            "total_saidas": 1700.00,
+            "saldo_final": 3680.00
+        }
 
 # Instância global do banco simulado
 db = MockDatabase()
