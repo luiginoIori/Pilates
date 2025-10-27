@@ -162,7 +162,10 @@ class MockDatabase:
                 "data_vencimento": "2025-11-01",
                 "status": "pendente",
                 "descricao": "Mensalidade Outubro",
-                "data_criacao": "2025-10-01"
+                "data_criacao": "2025-10-01",
+                "tipo_plano": "Mensalidade",
+                "quantidade": 1,
+                "data_pagamento": None
             },
             {
                 "id": 2,
@@ -172,7 +175,23 @@ class MockDatabase:
                 "data_vencimento": "2025-12-01",
                 "status": "pendente",
                 "descricao": "Mensalidade Novembro",
-                "data_criacao": "2025-11-01"
+                "data_criacao": "2025-11-01",
+                "tipo_plano": "Mensalidade",
+                "quantidade": 1,
+                "data_pagamento": None
+            },
+            {
+                "id": 3,
+                "client_id": 2,
+                "client_name": "Cliente Demo", 
+                "valor": 300.00,
+                "data_vencimento": "2025-09-01",
+                "status": "pago",
+                "descricao": "Mensalidade Setembro",
+                "data_criacao": "2025-09-01",
+                "tipo_plano": "Mensalidade",
+                "quantidade": 1,
+                "data_pagamento": "2025-09-15"
             }
         ]
         if client_id:
@@ -213,6 +232,14 @@ class MockDatabase:
                 "status": "pago"
             }
         ]
+    
+    def update_pagamento_receber(self, conta_id, data_pagamento):
+        """Simula atualização de pagamento de conta a receber"""
+        return True
+    
+    def delete_conta_receber(self, conta_id):
+        """Simula exclusão de conta a receber"""
+        return True
 
 # Instância global do banco simulado
 db = MockDatabase()
