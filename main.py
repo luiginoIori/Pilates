@@ -143,6 +143,13 @@ def main():
     else:
         client_dashboard()
 
+def client_dashboard():
+    """Dashboard do cliente - placeholder for now"""
+    st.info("Área do cliente em desenvolvimento")
+    if st.button("Voltar"):
+        st.session_state.clear()
+        st.rerun()
+
 def master_dashboard():
     """Dashboard do usuário Master"""
     
@@ -207,1330 +214,393 @@ def master_dashboard():
                 with st.expander(f"{icon} {notif_type} - {client_name} ({datetime.fromisoformat(created_at).strftime('%d/%m %H:%M')})"):
                     st.write(f"**Mensagem:** {message}")
                     if phone:
-                        st.write(f"**Telefone:** {phone}")
+                        st.write(f"📞 Telefone: {phone}")
                     
                     col_btn1, col_btn2 = st.columns(2)
-                    
                     with col_btn1:
-                        if st.button("✅ Marcar como Lida", key=f"popup_read_{notif_id}", use_container_width=True):
+                        if st.button("✅ Marcar como lida", key=f"mark_read_{notif_id}"):
                             conn = sqlite3.connect("pilates.db")
                             cursor = conn.cursor()
                             cursor.execute('UPDATE notifications SET is_read = 1 WHERE id = ?', (notif_id,))
                             conn.commit()
                             conn.close()
                             st.rerun()
-                    
-                    with col_btn2:
-                        if st.button("🗑️ Limpar", key=f"popup_delete_{notif_id}", use_container_width=True, type="secondary"):
-                            conn = sqlite3.connect("pilates.db")
-                            cursor = conn.cursor()
-                            cursor.execute('DELETE FROM notifications WHERE id = ?', (notif_id,))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
-            
-            col_close, col_all = st.columns(2)
-            with col_close:
-                if st.button("✖️ Fechar", use_container_width=True):
-                    st.session_state['show_notifications_popup'] = False
-                    st.rerun()
-            with col_all:
-                st.info("� Veja todas as notificações na aba 'Notificações'")
         else:
             st.info("Nenhuma notificação não lida")
-            if st.button("✖️ Fechar"):
-                st.session_state['show_notifications_popup'] = False
-                st.rerun()
+        
+        if st.button("❌ Fechar", key="close_notif_popup"):
+            st.session_state['show_notifications_popup'] = False
+            st.rerun()
         
         st.markdown("---")
     
-    # Menu de navegação
-    default_tab = st.session_state.get('active_tab', 0)
+    # Tabs para o master
+    tabs = st.tabs(["� Agendamentos", "👥 Clientes", "🏋️ Equipamentos", "⏰ Horários", "💰 Financeiro", "� Análises"])
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📅 Agendamentos", 
-        "👥 Clientes", 
-        "🏋️ Equipamentos", 
-        "⏰ Horários Fixos",
-        "💰 Financeiro",
-        "🔔 Notificações",
-        "� Histórico de Presença"
-    ])
-    
-    with tab1:
+    with tabs[0]:
         appointments_tab()
     
-    with tab2:
+    with tabs[1]:
         clients_tab()
     
-    with tab3:
+    with tabs[2]:
         equipment_tab()
     
-    with tab4:
+    with tabs[3]:
         schedules_overview_tab()
     
-    with tab5:
+    with tabs[4]:
         financial_tab()
     
-    with tab6:
-        notifications_tab()
-    
-    with tab7:
+    with tabs[5]:
         attendance_history_tab()
 
-def client_dashboard():
-    """Dashboard do cliente"""
+def appointments_tab():
+    """Aba de gerenciamento de agendamentos - Layout de duas colunas com calendário clicável"""
     from datetime import datetime, timedelta
     import calendar
+    from collections import defaultdict
+    import sqlite3
     
-    user_id = st.session_state.user['id']
-    today = get_brasilia_today()
+    # Preparar lista de equipamentos para os selectboxes
+    equipment_list = db.get_equipment() if hasattr(db, 'get_equipment') else []
+    equipment_options = ['N/A'] + [e['name'] for e in equipment_list] if equipment_list else ['N/A']
     
-    # CSS para reduzir espaços
-    st.markdown("""
-    <style>
-    h2 {
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-    h3 {
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .calendar-cell {
-        text-align: center;
-        padding: 8px;
-        border: 1px solid #ddd;
-        min-height: 40px;
-    }
-    .calendar-cell-blue {
-        background-color: #90CAF9;
-        font-weight: bold;
-    }
-    .calendar-cell-red {
-        background-color: #EF9A9A;
-        font-weight: bold;
-    }
-    .calendar-cell-empty {
-        background-color: #f5f5f5;
-    }
-    .calendar-header {
-        text-align: center;
-        font-weight: bold;
-        padding: 5px;
-        background-color: #e0e0e0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # ESTRUTURA DE DUAS COLUNAS
+    col_grade, col_calendar = st.columns([2, 1])
     
-    # Menu lateral para cliente
-    st.sidebar.title(f"👤 {st.session_state.user['name']}")
-    st.sidebar.markdown("---")
-    
-    menu_option = st.sidebar.radio(
-        "Menu:",
-        ["🏠 Página Principal", "📅 Próximas Aulas", "📚 Histórico de Aulas", "� Notificar Instrutor"],
-        key="client_menu"
-    )
-    
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Sair", use_container_width=True, key="client_logout_btn"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
-    
-    # ===== PÁGINA PRINCIPAL =====
-    if menu_option == "🏠 Página Principal":
-        st.title("🏠 Bem-vindo ao Agenda Pilates")
+    # ========== COLUNA 2: CALENDÁRIO SELETOR ==========
+    with col_calendar:
+        st.markdown("### � Selecione o Dia")
         
-        # Resumo rápido
-        all_appointments = db.get_appointments(client_id=user_id)
-        today_str = today.strftime('%Y-%m-%d')
+        # Obter data atual
+        today = get_brasilia_today()
         
-        # Próximas aulas (próximos 7 dias)
-        seven_days_ahead = (today + timedelta(days=7)).strftime('%Y-%m-%d')
-        next_week = [apt for apt in all_appointments 
-                    if apt['date'] >= today_str and apt['date'] <= seven_days_ahead 
-                    and apt['status'] != 'cancelled']
+        # Inicializar selected_date no session_state se não existir
+        if 'selected_date_cal' not in st.session_state:
+            st.session_state.selected_date_cal = today
         
-        # Total de presenças
-        total_presencas = len([apt for apt in all_appointments if apt.get('attended') == 1])
-        total_faltas = len([apt for apt in all_appointments if apt.get('attended') == 0])
-        
-        # Cards de resumo
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("📅 Próximas Aulas (7 dias)", len(next_week))
-        
-        with col2:
-            st.metric("✅ Total de Presenças", total_presencas)
-        
-        with col3:
-            st.metric("❌ Total de Faltas", total_faltas)
-        
-        with col4:
-            if total_presencas + total_faltas > 0:
-                taxa = (total_presencas / (total_presencas + total_faltas)) * 100
-                st.metric("📊 Taxa de Presença", f"{taxa:.1f}%")
-            else:
-                st.metric("📊 Taxa de Presença", "0%")
-        
-        st.markdown("---")
-        
-        # Agendamento de hoje
-        today_appointments = [apt for apt in all_appointments if apt['date'] == today_str]
-        
-        if today_appointments:
-            st.success("🎯 **Você tem aula hoje!**")
-            for apt in today_appointments:
-                st.markdown(f"""
-                <div style='padding: 15px; margin: 10px 0; background-color: #e3f2fd; border-left: 5px solid #2196F3; border-radius: 5px;'>
-                    <h3 style='margin: 0;'>🕐 {apt['time']}</h3>
-                    <p style='margin: 5px 0;'>📍 Equipamento: {apt.get('last_equipment_used', 'Não definido')}</p>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("📅 Você não tem aula agendada para hoje")
-        
-        st.markdown("---")
-        
-        # Próximas 3 aulas
-        st.subheader("📆 Suas Próximas Aulas")
-        future_apts = [apt for apt in all_appointments 
-                      if apt['date'] > today_str and apt['status'] != 'cancelled']
-        future_apts.sort(key=lambda x: (x['date'], x['time']))
-        
-        if future_apts[:3]:
-            for apt in future_apts[:3]:
-                apt_date = datetime.strptime(apt['date'], '%Y-%m-%d')
-                day_name = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][apt_date.weekday()]
-                
-                st.markdown(f"""
-                <div style='padding: 10px; margin: 5px 0; background-color: #f0f8ff; border-left: 4px solid #4CAF50; border-radius: 4px;'>
-                    <strong>📅 {format_date_br(apt['date'])}</strong> ({day_name}) às <strong>{apt['time']}</strong>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.warning("Você não tem aulas agendadas. Entre em contato com o instrutor.")
-    
-    # ===== PRÓXIMAS AULAS =====
-    elif menu_option == "📅 Próximas Aulas":
-        st.title("📅 Próximas Aulas")
-        
-        all_appointments = db.get_appointments(client_id=user_id)
-        today_str = today.strftime('%Y-%m-%d')
-        
-        # Filtrar aulas futuras
-        future_appointments = [apt for apt in all_appointments 
-                              if apt['date'] >= today_str and apt['status'] != 'cancelled']
-        future_appointments.sort(key=lambda x: (x['date'], x['time']))
-        
-        # Filtro de período
-        col1, col2 = st.columns(2)
-        with col1:
-            days_filter = st.selectbox("Período:", [7, 15, 30, 60, 90], index=1, format_func=lambda x: f"Próximos {x} dias")
-        
-        max_date = (today + timedelta(days=days_filter)).strftime('%Y-%m-%d')
-        filtered_appointments = [apt for apt in future_appointments if apt['date'] <= max_date]
-        
-        st.info(f"📆 Mostrando aulas de {format_date_br(today_str)} até {format_date_br(max_date)}")
-        st.success(f"✅ Total: **{len(filtered_appointments)}** aulas agendadas")
-        
-        if filtered_appointments:
-            for apt in filtered_appointments:
-                apt_date = datetime.strptime(apt['date'], '%Y-%m-%d')
-                day_name = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][apt_date.weekday()]
-                equipment = apt.get('last_equipment_used', 'Não definido')
-                
-                st.markdown(f"""
-                <div style='padding: 12px; margin: 6px 0; background-color: #e8f5e9; border-left: 4px solid #4CAF50; border-radius: 4px;'>
-                    <strong>📅 {format_date_br(apt['date'])}</strong> ({day_name}) às <strong>🕐 {apt['time']}</strong><br>
-                    <small>🏋️ Equipamento: {equipment}</small>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.warning("Você não tem aulas agendadas para este período.")
-    
-    # ===== HISTÓRICO DE AULAS (CALENDÁRIO) =====
-    elif menu_option == "📚 Histórico de Aulas":
-        st.title("📚 Histórico de Aulas")
-        
-        # Buscar todos os appointments
-        all_appointments = db.get_appointments(client_id=user_id)
-        
-        # Criar dicionário de datas com status
-        appointments_by_date = {}
-        for apt in all_appointments:
-            if apt.get('attended') is not None:
-                appointments_by_date[apt['date']] = apt.get('attended')
-        
-        # Estatísticas
-        total_presencas = len([a for a in all_appointments if a.get('attended') == 1])
-        total_faltas = len([a for a in all_appointments if a.get('attended') == 0])
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("✅ Total de Presenças", total_presencas)
-        with col2:
-            st.metric("❌ Total de Faltas", total_faltas)
-        with col3:
-            if total_presencas + total_faltas > 0:
-                taxa = (total_presencas / (total_presencas + total_faltas)) * 100
-                st.metric("📊 Taxa de Presença", f"{taxa:.1f}%")
-            else:
-                st.metric("📊 Taxa de Presença", "0%")
-        
-        st.markdown("---")
-        
-        # Seletor de mês
+        # Seletores de mês e ano
         col_mes, col_ano = st.columns(2)
         with col_mes:
-            mes_selecionado = st.selectbox("Mês:", list(range(1, 13)), 
-                                          index=today.month - 1,
-                                          format_func=lambda x: [
-                                              "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-                                              "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-                                          ][x-1])
+            mes_atual = st.session_state.selected_date_cal.month
+            mes_selecionado = st.selectbox(
+                "Mês:",
+                options=list(range(1, 13)),
+                index=mes_atual - 1,
+                format_func=lambda x: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                                      "Jul", "Ago", "Set", "Out", "Nov", "Dez"][x-1],
+                key="cal_month_select"
+            )
+        
         with col_ano:
-            ano_selecionado = st.selectbox("Ano:", list(range(today.year - 1, today.year + 2)), 
-                                          index=1)
+            ano_atual = st.session_state.selected_date_cal.year
+            anos = list(range(2024, 2031))
+            ano_selecionado = st.selectbox(
+                "Ano:",
+                options=anos,
+                index=anos.index(ano_atual) if ano_atual in anos else 1,
+                key="cal_year_select"
+            )
         
-        # Criar calendário
-        st.markdown(f"### Calendário - {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][mes_selecionado-1]} {ano_selecionado}")
-        
+        # Criar calendário do mês
         cal = calendar.monthcalendar(ano_selecionado, mes_selecionado)
+        dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         
-        # Cabeçalho
-        dias_semana_short = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-        
-        html = '<table style="width:100%; border-collapse: collapse;">'
-        html += '<tr>'
-        for day in dias_semana_short:
-            html += f'<th class="calendar-header">{day}</th>'
-        html += '</tr>'
+        # Cabeçalho do calendário
+        cols_header = st.columns(7)
+        for i, dia in enumerate(dias_semana):
+            with cols_header[i]:
+                st.markdown(f"**{dia}**")
         
         # Dias do mês
-        for week in cal:
-            html += '<tr>'
-            for day in week:
-                if day == 0:
-                    html += '<td class="calendar-cell calendar-cell-empty"></td>'
-                else:
-                    date_str = f"{ano_selecionado:04d}-{mes_selecionado:02d}-{day:02d}"
-                    
-                    if date_str in appointments_by_date:
-                        if appointments_by_date[date_str] == 1:
-                            cell_class = "calendar-cell-blue"
-                            icon = "✓"
-                        else:
-                            cell_class = "calendar-cell-red"
-                            icon = "✗"
-                        html += f'<td class="calendar-cell {cell_class}">{day}<br><small>{icon}</small></td>'
+        for semana in cal:
+            cols_week = st.columns(7)
+            for i, dia in enumerate(semana):
+                with cols_week[i]:
+                    if dia == 0:
+                        st.write("")  # Dia vazio
                     else:
-                        html += f'<td class="calendar-cell">{day}</td>'
-            html += '</tr>'
-        
-        html += '</table>'
-        st.markdown(html, unsafe_allow_html=True)
-        
-        st.markdown("---")
-        st.info("🔵 **Azul** = Presença | 🔴 **Vermelho** = Falta")
-        
-        # Lista detalhada do mês
-        month_appointments = [apt for apt in all_appointments 
-                            if apt['date'].startswith(f"{ano_selecionado:04d}-{mes_selecionado:02d}")
-                            and apt.get('attended') is not None]
-        month_appointments.sort(key=lambda x: x['date'], reverse=True)
-        
-        if month_appointments:
-            st.markdown("### 📋 Detalhes das Aulas")
-            for apt in month_appointments:
-                status_icon = "✅" if apt.get('attended') == 1 else "❌"
-                status_text = "Presença" if apt.get('attended') == 1 else "Falta"
-                bg_color = "#e8f5e9" if apt.get('attended') == 1 else "#ffebee"
-                
-                st.markdown(f"""
-                <div style='padding: 10px; margin: 5px 0; background-color: {bg_color}; border-radius: 4px;'>
-                    {status_icon} <strong>{format_date_br(apt['date'])}</strong> às {apt['time']} - {status_text}<br>
-                    <small>🏋️ Equipamento: {apt.get('last_equipment_used', 'Não registrado')}</small>
-                </div>
-                """, unsafe_allow_html=True)
+                        # Criar data para este dia
+                        dia_date = date(ano_selecionado, mes_selecionado, dia)
+                        
+                        # Verificar se é o dia selecionado
+                        is_selected = (st.session_state.selected_date_cal == dia_date)
+                        
+                        # Verificar se é hoje
+                        is_today = (dia_date == today)
+                        
+                        # Botão para o dia
+                        button_kwargs = {
+                            "label": str(dia),
+                            "key": f"cal_day_{ano_selecionado}_{mes_selecionado}_{dia}",
+                            "use_container_width": True
+                        }
+                        
+                        if is_selected:
+                            button_kwargs["type"] = "primary"
+                        elif is_today:
+                            button_kwargs["type"] = "secondary"
+                        
+                        if st.button(**button_kwargs):
+                            st.session_state.selected_date_cal = dia_date
+                            st.rerun()
     
-    # ===== PRÓXIMOS AGENDAMENTOS (COM NOTIFICAÇÕES) =====
-    # ===== NOTIFICAR INSTRUTOR (COM PRÓXIMOS AGENDAMENTOS) =====
-    elif menu_option == "� Notificar Instrutor":
-        st.title("� Notificar Instrutor")
-        st.info("💡 Aqui você pode notificar o instrutor sobre atrasos ou faltas nos seus próximos agendamentos")
+    # Legendas
+    col_leg1, col_leg2 = st.columns(2)
+    with col_leg1:
+        st.caption("🔵 Dia selecionado")
+    with col_leg2:
+        st.caption("⚪ Hoje")
+    
+    st.markdown("---")
+    
+    # ========== GRADE DE HORÁRIOS ==========
+    st.markdown("### 📋 Grade de Horários Diária")
+    
+    # Usar a data selecionada do calendário
+    selected_date = st.session_state.selected_date_cal
+    selected_date_str = selected_date.strftime('%Y-%m-%d')
+    day_name = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 
+                'Sexta-feira', 'Sábado', 'Domingo'][selected_date.weekday()]
+    
+    st.info(f"📅 {day_name} - {selected_date.strftime('%d/%m/%Y')}")
+
+    # Buscar todos os appointments do dia selecionado
+    conn = sqlite3.connect("pilates.db")
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT a.id, a.client_id, a.time, a.attended, a.equipamento, a.observacao,
+               u.name as client_name
+        FROM appointments a
+        JOIN users u ON a.client_id = u.id
+        WHERE a.date = ?
+        ORDER BY a.time
+    ''', (selected_date_str,))
+    
+    appointments_today = cursor.fetchall()
+    conn.close()
+    
+    # Organizar por horário
+    appointments_by_hour = defaultdict(list)
+    for apt in appointments_today:
+        apt_id, client_id, time_str, attended, equipamento, observacao, client_name = apt
+        hour = time_str.split(':')[0]
+        appointments_by_hour[hour].append({
+            'id': apt_id,
+            'client_id': client_id,
+            'client_name': client_name,
+            'time': time_str,
+            'attended': attended,
+            'equipamento': equipamento or 'N/A',
+            'observacao': observacao or ''
+        })
+    
+    # Exibir grade de 6:00 às 20:00
+    st.markdown("---")
+    hours = [f"{h:02d}:00" for h in range(6, 21)]
+    
+    for hour in hours:
+        hour_key = hour.split(':')[0]
+        clients_in_hour = appointments_by_hour.get(hour_key, [])
         
-        # Mostrar mensagem de sucesso se acabou de enviar
-        if st.session_state.get('appointment_notif_sent', False):
-            st.success("✅ Notificação enviada ao instrutor!")
-            st.session_state.appointment_notif_sent = False
-        
-        all_appointments = db.get_appointments(client_id=user_id)
-        today_str = today.strftime('%Y-%m-%d')
-        future_appointments = [apt for apt in all_appointments 
-                              if apt['date'] >= today_str and apt['status'] != 'cancelled']
-        future_appointments.sort(key=lambda x: (x['date'], x['time']))
-        
-        if future_appointments:
-            for apt in future_appointments[:10]:  # Mostrar próximos 10
-                with st.expander(f"📅 {format_date_br(apt['date'])} às {apt['time']}"):
-                    st.write(f"**Equipamento:** {apt.get('last_equipment_used', 'Não definido')}")
-                    st.markdown("---")
+        if clients_in_hour:
+            st.markdown(f"### 🕐 {hour}")
+            
+            for apt in clients_in_hour:
+                col_name, col_equip, col_pf, col_actions = st.columns([2, 1.5, 1, 0.5])
+                
+                with col_name:
+                    # Nome clicável para editar
+                    if st.button(
+                        f"👤 {apt['client_name']}",
+                        key=f"btn_name_{apt['id']}",
+                        help="Clique para editar horário/equipamento"
+                    ):
+                        st.session_state.editing_appointment_id = apt['id']
+                        st.session_state.show_edit_appointment_form = True
+                
+                with col_equip:
+                    # Selectbox de equipamento com salvamento automático
+                    current_equip = apt['equipamento'] if apt['equipamento'] in equipment_options else 'N/A'
+                    current_idx = equipment_options.index(current_equip)
                     
-                    # Formulário de notificação
-                    with st.form(f"notif_form_{apt['id']}", clear_on_submit=True):
-                        st.write("**📢 Notificar Instrutor:**")
-                        
-                        notif_type = st.radio("Tipo:", ["Atraso", "Falta"], 
-                                             key=f"type_{apt['id']}", horizontal=True)
-                        notif_msg = st.text_area("Mensagem:", 
-                                                key=f"msg_{apt['id']}",
-                                                placeholder="Ex: Vou atrasar 15 minutos...",
-                                                height=80)
-                        
-                        submit_apt_notif = st.form_submit_button("📤 Enviar Notificação", use_container_width=True)
-                    
-                    # Processar fora do form
-                    if submit_apt_notif:
-                        if notif_msg:
-                            delay_msg = notif_msg if notif_type == "Atraso" else None
-                            absence_msg = notif_msg if notif_type == "Falta" else None
-                            
-                            if db.update_appointment_notifications(apt['id'], delay_msg, absence_msg):
-                                st.session_state.appointment_notif_sent = True
-                                st.rerun()
-                            else:
-                                st.error("Erro ao enviar notificação")
-                        else:
-                            st.error("Por favor, escreva uma mensagem")
-        else:
-            st.info("Você não tem agendamentos futuros")
-
-def appointments_tab():
-    """Aba de gerenciamento de agendamentos"""
-    from datetime import datetime, timedelta
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.subheader("📅 Grade de Horários Semanal")
-    
-    with col2:
-        if st.button("➕ Novo Agendamento", use_container_width=True):
-            st.session_state.show_appointment_form = True
-    
-    # CSS para reduzir espaços (sem afetar padding-top global)
-    st.markdown("""
-    <style>
-    h2 {
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-    h3 {
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .stSelectbox {
-        margin-bottom: 0.5rem;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Seleção de semana
-    col_week, col_nav = st.columns([3, 2])
-    
-    with col_week:
-        # Inicializar data da semana se não existir
-        if 'selected_week_start' not in st.session_state:
-            today = get_brasilia_now()
-            # Início da semana atual (segunda-feira)
-            week_start = today - timedelta(days=today.weekday())
-            st.session_state.selected_week_start = week_start.strftime('%Y-%m-%d')
-
-        # Gerar 52 semanas futuras a partir da semana selecionada (inclui a atual)
-        current_week = datetime.strptime(st.session_state.selected_week_start, '%Y-%m-%d')
-        generated_weeks = []
-        for i in range(0, 52):
-            wk_start = current_week + timedelta(days=7 * i)
-            wk_end = wk_start + timedelta(days=4)
-            label = f"Semana de {wk_start.strftime('%d/%m')} a {wk_end.strftime('%d/%m')}"
-            generated_weeks.append({'label': label, 'start_date': wk_start.strftime('%Y-%m-%d')})
-
-        # Construir opções de seleção
-        week_options = {w['label']: w['start_date'] for w in generated_weeks}
-
-        # Encontrar semana atual selecionada
-        current_week_label = next((label for label, date in week_options.items()
-                                  if date == st.session_state.selected_week_start),
-                                  list(week_options.keys())[0])
-
-        selected_week_label = st.selectbox(
-            "Selecionar Semana:",
-            options=list(week_options.keys()),
-            index=list(week_options.keys()).index(current_week_label)
-        )
-
-        if selected_week_label in week_options:
-            st.session_state.selected_week_start = week_options[selected_week_label]
-    
-    with col_nav:
-        st.write("**Navegação:**")
-        col_prev, col_next = st.columns(2)
-        
-        with col_prev:
-            if st.button("⬅️ Semana Anterior", use_container_width=True):
-                current_date = datetime.strptime(st.session_state.selected_week_start, '%Y-%m-%d')
-                previous_week = current_date - timedelta(days=7)
-                st.session_state.selected_week_start = previous_week.strftime('%Y-%m-%d')
-                st.rerun()
-        
-        with col_next:
-            if st.button("Próxima Semana ➡️", use_container_width=True):
-                current_date = datetime.strptime(st.session_state.selected_week_start, '%Y-%m-%d')
-                next_week = current_date + timedelta(days=7)
-                st.session_state.selected_week_start = next_week.strftime('%Y-%m-%d')
-                st.rerun()
-    
-    # Mostrar grade de horários da semana selecionada com nomes clicáveis
-    schedule_data_raw = db.get_week_schedule_data_with_details(st.session_state.selected_week_start)
-    
-    # Configurar display da tabela
-    if schedule_data_raw:
-        st.markdown("**👆 Clique no nome de um cliente para editar**")
-        
-        # Criar grade com botões clicáveis
-        hours = [f"{h:02d}:00" for h in range(6, 21)]
-        
-        # Obter datas da semana
-        from datetime import datetime, timedelta
-        start = datetime.strptime(st.session_state.selected_week_start, '%Y-%m-%d')
-        week_days = []
-        for i in range(5):
-            current_date = start + timedelta(days=i)
-            day_name = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'][i]
-            week_days.append({
-                'name': day_name,
-                'date': current_date.strftime('%d/%m'),
-                'day_of_week': i + 1
-            })
-        
-        # CSS para linhas de separação e estilo do checkbox
-        st.markdown("""
-        <style>
-        .stColumn {
-            border-right: 1px solid #e0e0e0;
-            padding: 2px;
-        }
-        .stColumn:last-child {
-            border-right: none;
-        }
-        /* Estilizar checkbox - reduzir espaçamento vertical */
-        div[data-testid="stCheckbox"] {
-            margin-bottom: -15px !important;
-            margin-top: -8px !important;
-        }
-        div[data-testid="stCheckbox"] label {
-            padding: 0px !important;
-            margin: 0px !important;
-            gap: 0px !important;
-        }
-        div[data-testid="stCheckbox"] label p {
-            font-size: 10px !important;
-            font-weight: bold !important;
-            margin: 0px !important;
-            padding: 0px !important;
-            line-height: 0.8 !important;
-        }
-        /* Posicionar texto muito próximo ao checkbox */
-        div[data-testid="stCheckbox"] label span[data-testid="stMarkdownContainer"] {
-            margin-left: -2px !important;
-            padding-left: 0px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Cabeçalho da grade
-        header_cols = st.columns([1] + [2]*5)
-        with header_cols[0]:
-            st.markdown("**Horário**")
-        for i, day in enumerate(week_days):
-            with header_cols[i+1]:
-                st.markdown(f"**{day['name']} {format_date_br(day['date'])}**")
-        
-        st.markdown("<hr style='margin: 5px 0 2px 0;'>", unsafe_allow_html=True)
-        
-        # Linhas de horários com separadores
-        for idx, hour_data in enumerate(schedule_data_raw):
-            # Verificar se a linha tem algum cliente
-            has_clients = any(day_data['clients'] for day_data in hour_data['days'])
-            
-            # Usar altura menor para linhas vazias
-            if has_clients:
-                cols = st.columns([1] + [2]*5)
-            else:
-                # Linha vazia - usar container compacto
-                st.markdown(f"<div style='padding: 1px 0;'><small><b>{hour_data['time']}</b></small></div>", unsafe_allow_html=True)
-                if idx < len(schedule_data_raw) - 1:
-                    st.markdown("<hr style='margin: 1px 0; border: 0; border-top: 1px solid #f0f0f0;'>", unsafe_allow_html=True)
-                continue
-            
-            with cols[0]:
-                st.markdown(f"**{hour_data['time']}**")
-            
-            for i, day_data in enumerate(hour_data['days']):
-                with cols[i+1]:
-                    if day_data['clients']:
-                        for client_idx, client_info in enumerate(day_data['clients']):
-                            # Buscar informações do tipo de agendamento
-                            client_schedules = db.get_client_schedule(client_info['client_id'])
-                            schedule_type = "Fixo"  # Padrão
-                            
-                            # Procurar o tipo correto para este dia/horário
-                            for sched in client_schedules:
-                                if sched['day_of_week'] == day_data['day_of_week'] and sched['time'] == hour_data['time']:
-                                    schedule_type = sched.get('schedule_type', 'Fixo')
-                                    break
-                            
-                            # Buscar agendamento específico para verificar presença
-                            appointment = db.get_appointment_by_details(
-                                client_info['client_id'], 
-                                day_data['date'], 
-                                hour_data['time']
-                            )
-                            
-                            # Container para nome + checkboxes (P e F)
-                            col_name, col_checks = st.columns([3, 0.5])
-                            
-                            with col_name:
-                                # Ícone baseado no tipo
-                                if schedule_type == "Fisioterapia":
-                                    icon = "🏥"
-                                elif schedule_type == "Aula Experimental":
-                                    icon = "🆕"
-                                else:
-                                    icon = "📅"
-                                
-                                # Garantir que o nome do cliente seja exibido
-                                client_name = client_info.get('client_name', 'Cliente')
-                                if not client_name or client_name == 'None':
-                                    # Buscar nome do banco se não vier
-                                    clients = db.get_clients()
-                                    client = next((c for c in clients if c['id'] == client_info['client_id']), None)
-                                    client_name = client['name'] if client else 'Cliente'
-                                
-                                # Botão clicável com o nome do cliente
-                                btn_label = f"{icon} {client_name}"
-                                if client_info.get('equipment_name'):
-                                    btn_label += f" 🏋️"
-                                
-                                # Chave única: cliente_id + dia + hora + índice do cliente na célula
-                                btn_key = f"btn_{client_info['client_id']}_{day_data['day_of_week']}_{hour_data['time'].replace(':', '')}_{client_idx}"
-                                
-                                if st.button(btn_label, key=btn_key, use_container_width=True):
-                                    st.session_state['editing_client_id'] = client_info['client_id']
-                                    st.session_state['editing_from_day'] = day_data['day_of_week']
-                                    st.session_state['editing_from_time'] = hour_data['time']
-                                    st.session_state['editing_is_appointment'] = client_info['has_appointment']
-                                    st.session_state['editing_date'] = day_data['date']
-                                    st.rerun()
-                            
-                            # Checkboxes de Presente e Falta (verticais)
-                            with col_checks:
-                                # Checkbox P (Presente)
-                                chk_p_key = f"presente_{client_info['client_id']}_{day_data['date']}_{hour_data['time'].replace(':', '')}_{client_idx}"
-                                current_presente = appointment.get('attended') == 1 if appointment else False
-                                
-                                presente_checked = st.checkbox("**P**", value=current_presente, key=chk_p_key)
-                                
-                                # Se marcou presente
-                                if presente_checked and not current_presente:
-                                    if appointment:
-                                        db.mark_attendance(appointment['id'], True)
-                                    else:
-                                        # Criar agendamento e marcar como presente
-                                        apt_created = db.create_appointment(
-                                            client_info['client_id'],
-                                            day_data['date'],
-                                            hour_data['time']
-                                        )
-                                        if apt_created:
-                                            new_apt = db.get_appointment_by_details(
-                                                client_info['client_id'],
-                                                day_data['date'],
-                                                hour_data['time']
-                                            )
-                                            if new_apt:
-                                                db.mark_attendance(new_apt['id'], True)
-                                    # Limpar qualquer state de edição para forçar recarga
-                                    if 'editing_client_id' in st.session_state:
-                                        del st.session_state['editing_client_id']
-                                    st.rerun()
-                                
-                                # Se desmarcou presente
-                                elif not presente_checked and current_presente and appointment:
-                                    db.mark_attendance(appointment['id'], None)
-                                    st.rerun()
-                                
-                                # Checkbox F (Falta)
-                                chk_f_key = f"falta_{client_info['client_id']}_{day_data['date']}_{hour_data['time'].replace(':', '')}_{client_idx}"
-                                current_falta = appointment.get('attended') == 0 if appointment else False
-                                
-                                falta_checked = st.checkbox("**F**", value=current_falta, key=chk_f_key)
-                                
-                                # Se marcou falta
-                                if falta_checked and not current_falta:
-                                    if appointment:
-                                        db.mark_attendance(appointment['id'], False)
-                                    else:
-                                        # Criar agendamento e marcar como falta
-                                        apt_created = db.create_appointment(
-                                            client_info['client_id'],
-                                            day_data['date'],
-                                            hour_data['time']
-                                        )
-                                        if apt_created:
-                                            new_apt = db.get_appointment_by_details(
-                                                client_info['client_id'],
-                                                day_data['date'],
-                                                hour_data['time']
-                                            )
-                                            if new_apt:
-                                                db.mark_attendance(new_apt['id'], False)
-                                    # Limpar qualquer state de edição para forçar recarga
-                                    if 'editing_client_id' in st.session_state:
-                                        del st.session_state['editing_client_id']
-                                    st.rerun()
-                                
-                                # Se desmarcou falta
-                                elif not falta_checked and current_falta and appointment:
-                                    db.mark_attendance(appointment['id'], None)
-                                    st.rerun()
-            
-            # Linha de separação entre horários com clientes
-            if idx < len(schedule_data_raw) - 1:
-                st.markdown("<hr style='margin: 2px 0; border: 0; border-top: 1px solid #e0e0e0;'>", unsafe_allow_html=True)
-        
-        # Formulário de edição (aparece abaixo da grade quando um cliente é selecionado)
-        if st.session_state.get('editing_client_id'):
-            st.markdown("---")
-            st.markdown("---")
-            
-            client_id = st.session_state['editing_client_id']
-            from_day = st.session_state.get('editing_from_day')
-            from_time = st.session_state.get('editing_from_time')
-            
-            # Buscar informações do cliente
-            clients = db.get_clients()
-            client = next((c for c in clients if c['id'] == client_id), None)
-            
-            if client:
-                st.subheader(f"✏️ Editando: {client['name']}")
-                
-                # Seção de Controle de Presença
-                st.markdown("### ✅ Controle de Presença")
-                
-                # Verificar se é um dia específico (appointment) ou horário fixo
-                editing_date = st.session_state.get('editing_date')
-                is_appointment = st.session_state.get('editing_is_appointment', False)
-                
-                if editing_date:
-                    # Buscar o agendamento
-                    appointment = db.get_appointment_by_details(client_id, editing_date, from_time)
-                    
-                    if appointment:
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.write(f"**📅 Data:** {datetime.strptime(editing_date, '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                        
-                        with col2:
-                            st.write(f"**🕐 Horário:** {from_time}")
-                        
-                        with col3:
-                            current_attendance = appointment.get('attended')
-                            if current_attendance == 1:
-                                st.success("✅ Presença Confirmada")
-                            elif current_attendance == 0:
-                                st.error("❌ Falta Registrada")
-                            else:
-                                st.warning("⏳ Presença Não Marcada")
-                        
-                        # Botões para marcar presença/falta
-                        col_btn1, col_btn2, col_btn3 = st.columns(3)
-                        
-                        with col_btn1:
-                            if st.button("✅ Marcar Presença", use_container_width=True, type="primary"):
-                                if db.mark_attendance(appointment['id'], True):
-                                    st.success("Presença marcada!")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                        
-                        with col_btn2:
-                            if st.button("❌ Marcar Falta", use_container_width=True):
-                                if db.mark_attendance(appointment['id'], False):
-                                    st.warning("Falta registrada!")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                        
-                        with col_btn3:
-                            if st.button("🔄 Limpar Marcação", use_container_width=True):
-                                if db.mark_attendance(appointment['id'], None):
-                                    st.info("Marcação removida!")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                    else:
-                        st.info("📋 Não há agendamento específico para este dia. Este é um horário fixo.")
-                
-                st.markdown("---")
-                
-                # Mostrar histórico médico
-                st.markdown("### 📋 Histórico Médico")
-                with st.form("medical_history_form"):
-                    medical_history = st.text_area(
-                        "Histórico Médico:",
-                        value=client.get('medical_history', ''),
-                        height=150,
-                        help="Informações sobre condições médicas, lesões, limitações, etc."
+                    new_equipment = st.selectbox(
+                        "🏋️",
+                        options=equipment_options,
+                        index=current_idx,
+                        key=f"equip_select_{apt['id']}",
+                        label_visibility="collapsed"
                     )
                     
-                    if st.form_submit_button("💾 Salvar Histórico Médico"):
+                    # Se mudou, salvar automaticamente
+                    if new_equipment != apt['equipamento']:
+                        conn = sqlite3.connect("pilates.db")
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            'UPDATE appointments SET equipamento = ? WHERE id = ?',
+                            (new_equipment, apt['id'])
+                        )
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
+            
+            with col_pf:
+                # Checkboxes P e F em linha
+                col_p, col_f = st.columns(2)
+                with col_p:
+                    p_checked = apt['attended'] == 1
+                    if st.checkbox(
+                        "P",
+                        value=p_checked,
+                        key=f"p_{apt['id']}",
+                        help="Presença"
+                    ):
+                        if not p_checked:
+                            # Marcar presença
+                            db.mark_attendance(apt['id'], True, apt['observacao'], apt['equipamento'])
+                            st.rerun()
+                
+                with col_f:
+                    f_checked = apt['attended'] == 0
+                    if st.checkbox(
+                        "F",
+                        value=f_checked,
+                        key=f"f_{apt['id']}",
+                        help="Falta"
+                    ):
+                        if not f_checked:
+                            # Marcar falta
+                            db.mark_attendance(apt['id'], False, apt['observacao'], apt['equipamento'])
+                            st.rerun()
+            
+            with col_actions:
+                # Indicador visual do status
+                if apt['attended'] == 1:
+                    st.success("✅")
+                elif apt['attended'] == 0:
+                    st.error("❌")
+                else:
+                    st.warning("⏳")
+            
+            st.markdown("---")
+        else:
+            # Exibir horário vazio
+            st.markdown(f"**🕐 {hour}** - _Sem agendamentos_")
+    
+    # Formulário de edição (modal)
+    if st.session_state.get('show_edit_appointment_form', False):
+        st.markdown("---")
+        st.markdown("### ✏️ Editar Agendamento")
+        
+        editing_apt_id = st.session_state.get('editing_appointment_id')
+        
+        # Buscar dados do appointment
+        conn = sqlite3.connect("pilates.db")
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT a.id, a.client_id, a.date, a.time, a.equipamento, a.observacao,
+                   u.name as client_name
+            FROM appointments a
+            JOIN users u ON a.client_id = u.id
+            WHERE a.id = ?
+        ''', (editing_apt_id,))
+        
+        apt_data = cursor.fetchone()
+        conn.close()
+        
+        if apt_data:
+            apt_id, client_id, apt_date, apt_time, apt_equip, apt_obs, client_name = apt_data
+
+            st.info(f"**Cliente:** {client_name}")
+
+            col_date, col_time = st.columns(2)
+            with col_date:
+                new_date = st.date_input(
+                    "Nova Data:",
+                    value=datetime.strptime(apt_date, '%Y-%m-%d').date(),
+                    key="edit_apt_date"
+                )
+
+            with col_time:
+                time_options = [f"{h:02d}:00" for h in range(6, 21)]
+                current_time_idx = time_options.index(apt_time) if apt_time in time_options else 0
+                new_time = st.selectbox(
+                    "Novo Horário:",
+                    options=time_options,
+                    index=current_time_idx,
+                    key="edit_apt_time"
+                )
+
+            # Seletor de equipamento
+            equipment_list = db.get_equipment() if hasattr(db, 'get_equipment') else []
+            equipment_options = [e['name'] for e in equipment_list] if equipment_list else []
+
+            if equipment_options:
+                current_equip_idx = equipment_options.index(apt_equip) if apt_equip in equipment_options else 0
+                new_equipment = st.selectbox(
+                    "Equipamento:",
+                    options=equipment_options,
+                    index=current_equip_idx,
+                    key="edit_apt_equipment"
+                )
+            else:
+                new_equipment = apt_equip
+
+            # Observação
+            new_obs = st.text_area(
+                "Observação:",
+                value=apt_obs or '',
+                height=80,
+                key="edit_apt_obs"
+            )
+
+            col_save, col_cancel = st.columns(2)
+
+            with col_save:
+                if st.button("💾 Salvar Alterações", use_container_width=True, type="primary"):
+                    # Verificar mudanças
+                    mudou_data = new_date.strftime('%Y-%m-%d') != apt_date
+                    mudou_horario = new_time != apt_time
+                    mudou_equip = new_equipment != apt_equip
+                    mudou_obs = new_obs != (apt_obs or '')
+
+                    if mudou_data or mudou_horario:
+                        # Atualizar data e horário
                         conn = sqlite3.connect("pilates.db")
                         cursor = conn.cursor()
                         cursor.execute('''
-                            UPDATE users 
-                            SET medical_history = ?
+                            UPDATE appointments
+                            SET date = ?, time = ?, equipamento = ?, observacao = ?
                             WHERE id = ?
-                        ''', (medical_history, client_id))
+                        ''', (new_date.strftime('%Y-%m-%d'), new_time, new_equipment, new_obs, apt_id))
                         conn.commit()
                         conn.close()
-                        st.success("✅ Histórico médico atualizado!")
-                        st.rerun()
-                
-                st.markdown("---")
-                
-                # Buscar todos os horários fixos atuais do cliente (necessário em ambos os modos)
-                current_schedules = db.get_client_schedule(client_id)
-                
-                # Verificar se clicou em uma reposição
-                is_appointment = st.session_state.get('editing_is_appointment', False)
-                editing_date = st.session_state.get('editing_date')
-                
-                if is_appointment and editing_date:
-                    # MODO REPOSIÇÃO - Buscar o agendamento específico
-                    st.info(f"📌 Você clicou em uma REPOSIÇÃO do dia {editing_date}")
-                    
-                    appointments = db.get_appointments()
-                    appointment = next((apt for apt in appointments 
-                                       if apt['client_id'] == client_id 
-                                       and apt['date'] == editing_date 
-                                       and apt['time'] == from_time
-                                       and apt['status'] != 'cancelled'), None)
-                    
-                    if appointment:
-                        with st.form("edit_appointment_form"):
-                            st.write("**Detalhes da Reposição:**")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.write(f"**Data:** {datetime.strptime(editing_date, '%Y-%m-%d').strftime('%d/%m/%Y')}")
-                                # Garantir que o valor padrão não seja anterior à data mínima
-                                current_date = datetime.strptime(editing_date, '%Y-%m-%d').date()
-                                default_date = max(current_date, date.today())
-                                new_apt_date = st.date_input("Alterar para:", 
-                                                             value=default_date,
-                                                             min_value=date.today(),
-                                                             key="edit_apt_date")
-                            
-                            with col2:
-                                st.write(f"**Horário:** {from_time}")
-                                new_apt_time = st.selectbox("Alterar para:", 
-                                                           [f"{h:02d}:00" for h in range(6, 21)],
-                                                           index=[f"{h:02d}:00" for h in range(6, 21)].index(from_time),
-                                                           key="edit_apt_time")
-                            
-                            with col3:
-                                st.write(f"**Status:** {appointment.get('status', 'scheduled')}")
-                            
-                            st.markdown("---")
-                            
-                            col_save, col_delete, col_cancel = st.columns(3)
-                            
-                            with col_save:
-                                if st.form_submit_button("💾 Salvar Alterações", use_container_width=True):
-                                    # Atualizar agendamento
-                                    conn = sqlite3.connect("pilates.db")
-                                    cursor = conn.cursor()
-                                    
-                                    new_day_of_week = new_apt_date.weekday() + 1
-                                    
-                                    cursor.execute('''
-                                        UPDATE appointments 
-                                        SET date = ?, time = ?, day_of_week = ?
-                                        WHERE id = ?
-                                    ''', (new_apt_date.strftime('%Y-%m-%d'), new_apt_time, new_day_of_week, appointment['id']))
-                                    
-                                    conn.commit()
-                                    conn.close()
-                                    
-                                    st.success("✅ Reposição atualizada!")
-                                    del st.session_state['editing_client_id']
-                                    del st.session_state['editing_is_appointment']
-                                    del st.session_state['editing_date']
-                                    st.rerun()
-                            
-                            with col_delete:
-                                if st.form_submit_button("🗑️ Excluir Reposição", use_container_width=True, type="secondary"):
-                                    if db.cancel_appointment(appointment['id']):
-                                        st.success("Reposição excluída!")
-                                        del st.session_state['editing_client_id']
-                                        del st.session_state['editing_is_appointment']
-                                        del st.session_state['editing_date']
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao excluir")
-                            
-                            with col_cancel:
-                                if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                    del st.session_state['editing_client_id']
-                                    del st.session_state['editing_is_appointment']
-                                    del st.session_state['editing_date']
-                                    st.rerun()
+                        st.success("✅ Horário atualizado!")
+                    elif mudou_equip or mudou_obs:
+                        # Atualizar apenas equipamento/observação
+                        conn = sqlite3.connect("pilates.db")
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE appointments
+                            SET equipamento = ?, observacao = ?
+                            WHERE id = ?
+                        ''', (new_equipment, new_obs, apt_id))
+                        conn.commit()
+                        conn.close()
+                        st.success("✅ Equipamento/observação atualizado!")
                     else:
-                        st.warning("Reposição não encontrada")
-                        if st.button("⬅️ Voltar"):
-                            del st.session_state['editing_client_id']
-                            del st.session_state['editing_is_appointment']
-                            del st.session_state['editing_date']
-                            st.rerun()
-                
-                else:
-                    # MODO HORÁRIO FIXO - Edição normal
-                    st.info("📅 Você clicou em um HORÁRIO FIXO")
-                
-                days_map = {1: "Segunda", 2: "Terça", 3: "Quarta", 4: "Quinta", 5: "Sexta"}
-                equipment_list = db.get_equipment()
-                equipment_options = {eq['name']: eq['id'] for eq in equipment_list}
-                hours_list = [f"{h:02d}:00" for h in range(6, 21)]
-                
-                # Função para contar clientes em cada dia/horário
-                def get_available_slots():
-                    """Retorna dicionário com contagem de clientes por dia/horário"""
-                    all_schedules = db.get_all_client_schedules()
-                    slots_count = {}
-                    
-                    for day in range(1, 6):  # Segunda a Sexta
-                        slots_count[day] = {}
-                        for hour in hours_list:
-                            # Contar quantos clientes têm horário fixo neste dia/hora
-                            count = sum(1 for s in all_schedules 
-                                      if s['day_of_week'] == day and s['time'] == hour)
-                            slots_count[day][hour] = count
-                    
-                    return slots_count
-                
-                def get_available_slots_for_date(target_date):
-                    """Retorna dicionário com contagem de clientes para uma data específica"""
-                    from datetime import datetime
-                    date_obj = datetime.strptime(target_date, '%Y-%m-%d')
-                    day_of_week = date_obj.weekday() + 1
-                    
-                    # Buscar agendamentos confirmados para esta data
-                    appointments = db.get_appointments()
-                    slots_count = {}
-                    
-                    for hour in hours_list:
-                        # Contar agendamentos confirmados nesta data/hora
-                        count = sum(1 for apt in appointments 
-                                  if apt['date'] == target_date 
-                                  and apt['time'] == hour 
-                                  and apt['status'] != 'cancelled')
-                        
-                        # Também contar horários fixos para este dia da semana (que não têm appointment nesta data)
-                        all_schedules = db.get_all_client_schedules()
-                        clients_with_apt = {apt['client_id'] for apt in appointments 
-                                          if apt['date'] == target_date and apt['time'] == hour}
-                        
-                        fixed_count = sum(1 for s in all_schedules 
-                                        if s['day_of_week'] == day_of_week 
-                                        and s['time'] == hour 
-                                        and s['client_id'] not in clients_with_apt)
-                        
-                        slots_count[hour] = count + fixed_count
-                    
-                    return slots_count
-                
-                # Obter vagas disponíveis
-                available_slots = get_available_slots()
-                
-                # Inicializar session_state para novos campos se não existir
-                if 'show_add_new' not in st.session_state:
-                    st.session_state.show_add_new = False
-                if 'show_reposicao' not in st.session_state:
-                    st.session_state.show_reposicao = False
-                
-                # Checkboxes para controlar exibição
-                st.markdown("---")
-                col_opt1, col_opt2 = st.columns(2)
-                
-                with col_opt1:
-                    st.markdown("**➕ Adicionar Novo Horário:**")
-                    if st.checkbox("✅ Adicionar mais um dia", key="add_new_check", value=st.session_state.show_add_new):
-                        st.session_state.show_add_new = True
-                    else:
-                        st.session_state.show_add_new = False
-                
-                with col_opt2:
-                    st.markdown("**📌 Criar Reposição:**")
-                    if st.checkbox("✅ Reposição (agendamento único)", key="repos_check", value=st.session_state.show_reposicao):
-                        st.session_state.show_reposicao = True
-                    else:
-                        st.session_state.show_reposicao = False
-                
-                # Campos para ADICIONAR NOVO (aparecem imediatamente)
-                new_schedule = None
-                if st.session_state.show_add_new:
-                    with st.container():
-                        st.info("🆕 Preencha os dados do novo horário (máximo 3 clientes por horário):")
-                        
-                        # Filtrar dias que têm pelo menos um horário disponível
-                        available_days = {day: name for day, name in days_map.items() 
-                                        if any(available_slots[day][hour] < 3 for hour in hours_list)}
-                        
-                        if not available_days:
-                            st.error("❌ Não há dias/horários disponíveis (todos os horários têm 3 clientes)")
-                        else:
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                new_day_add = st.selectbox(
-                                    "Dia da semana:",
-                                    options=list(available_days.keys()),
-                                    format_func=lambda x: available_days[x],
-                                    key="new_day_add_field"
-                                )
-                            
-                            with col2:
-                                # Filtrar horários disponíveis para o dia selecionado
-                                available_hours = [hour for hour in hours_list 
-                                                 if available_slots[new_day_add][hour] < 3]
-                                
-                                if not available_hours:
-                                    st.warning("⚠️ Nenhum horário disponível neste dia")
-                                    new_time_add = None
-                                else:
-                                    new_time_add = st.selectbox(
-                                        f"Horário ({len(available_hours)} disponíveis):",
-                                        options=available_hours,
-                                        format_func=lambda h: f"{h} ({available_slots[new_day_add][h]}/3)",
-                                        key="new_time_add_field"
-                                    )
-                            
-                            with col3:
-                                new_equipment_add = st.selectbox(
-                                    "Equipamento:",
-                                    options=list(equipment_options.keys()),
-                                    key="new_eq_add_field"
-                                )
-                            
-                            if new_time_add:
-                                new_schedule = {
-                                    'day': new_day_add,
-                                    'time': new_time_add,
-                                    'equipment_id': equipment_options[new_equipment_add]
-                                }
-                
-                # Campos para REPOSIÇÃO (aparecem imediatamente)
-                reposicao_data = None
-                if st.session_state.show_reposicao:
-                    with st.container():
-                        st.warning("⚠️ A reposição é um agendamento único e não altera os horários fixos.")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            repos_date = st.date_input("Data:", min_value=date.today(), key="repos_date_field")
-                        
-                        # Obter vagas para a data selecionada
-                        repos_date_str = repos_date.strftime('%Y-%m-%d')
-                        repos_slots = get_available_slots_for_date(repos_date_str)
-                        available_repos_hours = [hour for hour in hours_list if repos_slots[hour] < 3]
-                        
-                        with col2:
-                            if not available_repos_hours:
-                                st.error("❌ Nenhum horário disponível nesta data")
-                                repos_time = None
-                            else:
-                                # Verificar se o cliente já tem reposição nesta data/horário
-                                existing_appointments = db.get_appointments()
-                                client_appointments_on_date = [
-                                    apt for apt in existing_appointments 
-                                    if apt['client_id'] == client_id 
-                                    and apt['date'] == repos_date_str
-                                    and apt['status'] != 'cancelled'
-                                ]
-                                
-                                # Remover horários onde o cliente já tem reposição
-                                client_existing_times = {apt['time'] for apt in client_appointments_on_date}
-                                available_repos_hours_filtered = [
-                                    h for h in available_repos_hours 
-                                    if h not in client_existing_times
-                                ]
-                                
-                                if not available_repos_hours_filtered:
-                                    st.error("❌ Você já tem reposição em todos os horários disponíveis desta data")
-                                    repos_time = None
-                                else:
-                                    repos_time = st.selectbox(
-                                        f"Horário ({len(available_repos_hours_filtered)} disponíveis):",
-                                        options=available_repos_hours_filtered,
-                                        format_func=lambda h: f"{h} ({repos_slots[h]}/3)",
-                                        key="repos_time_field"
-                                    )
-                        
-                        with col3:
-                            repos_eq = st.selectbox("Equipamento:", list(equipment_options.keys()), key="repos_eq_field")
-                        
-                        if repos_time:
-                            reposicao_data = {
-                                'date': repos_date,
-                                'time': repos_time,
-                                'equipment_id': equipment_options[repos_eq]
-                            }
-                
-                st.markdown("---")
-                
-                # FORMULÁRIO apenas para editar horários existentes
-                with st.form("edit_client_schedule"):
-                    st.write("**📅 Horários Fixos Cadastrados:**")
-                    
-                    # Mostrar horários existentes com opção de editar ou remover
-                    schedules_to_keep = {}
-                    
-                    for idx, sched in enumerate(current_schedules):
-                        st.markdown(f"**📅 {days_map[sched['day_of_week']]} às {sched['time']}** (Fixo)")
-                        
-                        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-                        
-                        with col1:
-                            new_day = st.selectbox(
-                                "Dia:",
-                                options=list(days_map.keys()),
-                                format_func=lambda x: days_map[x],
-                                index=list(days_map.keys()).index(sched['day_of_week']),
-                                key=f"edit_day_{idx}"
-                            )
-                        
-                        with col2:
-                            new_time = st.selectbox(
-                                "Horário:",
-                                options=hours_list,
-                                index=hours_list.index(sched['time']) if sched['time'] in hours_list else 0,
-                                key=f"edit_time_{idx}"
-                            )
-                        
-                        with col3:
-                            current_eq = sched.get('equipment_name', list(equipment_options.keys())[0])
-                            new_equipment = st.selectbox(
-                                "Equipamento:",
-                                options=list(equipment_options.keys()),
-                                index=list(equipment_options.keys()).index(current_eq) if current_eq in equipment_options else 0,
-                                key=f"edit_eq_{idx}"
-                            )
-                        
-                        with col4:
-                            remove = st.checkbox("🗑️", key=f"remove_{idx}", help="Remover este horário")
-                        
-                        if not remove:
-                            schedules_to_keep[idx] = {
-                                'schedule_id': sched['id'],
-                                'old_day': sched['day_of_week'],
-                                'old_time': sched['time'],
-                                'new_day': new_day,
-                                'new_time': new_time,
-                                'new_equipment_id': equipment_options[new_equipment]
-                            }
-                        
-                        st.divider()
-                    
-                    # Buscar e mostrar reposições (appointments) do cliente
-                    appointments = db.get_appointments()
-                    client_appointments = [
-                        apt for apt in appointments 
-                        if apt['client_id'] == client_id 
-                        and apt['status'] != 'cancelled'
-                        and apt['date'] >= date.today().strftime('%Y-%m-%d')  # Apenas futuras
-                    ]
-                    
-                    appointments_to_keep = {}  # Inicializar sempre
-                    
-                    if client_appointments:
-                        st.markdown("**📌 Reposições Agendadas:**")
-                        
-                        appointments_to_keep = {}
-                        
-                        for apt_idx, apt in enumerate(client_appointments):
-                            apt_date = datetime.strptime(apt['date'], '%Y-%m-%d')
-                            day_name = days_map.get(apt['day_of_week'], 'Sábado/Domingo')
-                            st.markdown(f"**📌 {apt_date.strftime('%d/%m/%Y')} ({day_name}) às {apt['time']}** (Reposição)")
-                            
-                            col1, col2, col3 = st.columns([2, 2, 1])
-                            
-                            with col1:
-                                new_apt_date = st.date_input(
-                                    "Data:",
-                                    value=apt_date.date(),
-                                    min_value=date.today(),
-                                    key=f"edit_apt_date_{apt_idx}_{apt['id']}"
-                                )
-                            
-                            with col2:
-                                new_apt_time = st.selectbox(
-                                    "Horário:",
-                                    options=hours_list,
-                                    index=hours_list.index(apt['time']) if apt['time'] in hours_list else 0,
-                                    key=f"edit_apt_time_{apt_idx}_{apt['id']}"
-                                )
-                            
-                            with col3:
-                                remove_apt = st.checkbox("🗑️", key=f"remove_apt_{apt_idx}_{apt['id']}", help="Excluir esta reposição")
-                            
-                            if not remove_apt:
-                                appointments_to_keep[apt['id']] = {
-                                    'old_date': apt['date'],
-                                    'old_time': apt['time'],
-                                    'new_date': new_apt_date.strftime('%Y-%m-%d'),
-                                    'new_time': new_apt_time
-                                }
-                            
-                            st.divider()
-                    
-                    st.markdown("---")
-                    
-                    st.markdown("---")
-                    
-                    col_save, col_cancel = st.columns(2)
-                    
-                    with col_save:
-                        if st.form_submit_button("💾 Salvar Alterações", use_container_width=True):
-                            success = True
-                            
-                            if st.session_state.show_reposicao and reposicao_data:
-                                # Verificar se o cliente já tem agendamento neste dia (em qualquer horário)
-                                repos_date_str = reposicao_data['date'].strftime('%Y-%m-%d')
-                                existing_appointments = db.get_appointments(client_id=client_id)
-                                has_appointment_on_date = any(
-                                    apt['date'] == repos_date_str and apt['status'] != 'cancelled'
-                                    for apt in existing_appointments
-                                )
-                                
-                                if has_appointment_on_date:
-                                    st.error(f"❌ Cliente já possui um agendamento no dia {reposicao_data['date'].strftime('%d/%m/%Y')}. Apenas uma aula por dia é permitida.")
-                                    success = False
-                                else:
-                                    # Criar apenas reposição
-                                    if db.create_appointment(client_id, repos_date_str, 
-                                                            reposicao_data['time'], None):
-                                        st.success(f"✅ Reposição criada para {reposicao_data['date'].strftime('%d/%m/%Y')} às {reposicao_data['time']}")
-                                        st.session_state.show_reposicao = False
-                                    else:
-                                        st.error(f"❌ Erro ao criar reposição: O horário {reposicao_data['time']} do dia {reposicao_data['date'].strftime('%d/%m/%Y')} pode estar lotado (máximo 3 clientes)")
-                                        success = False
-                            elif st.session_state.show_reposicao and not reposicao_data:
-                                st.warning("⚠️ Nenhum horário disponível selecionado para a reposição")
-                                success = False
-                            else:
-                                # Processar alterações/exclusões de reposições existentes
-                                for apt in client_appointments:
-                                    if apt['id'] not in appointments_to_keep:
-                                        # Excluir reposição
-                                        db.cancel_appointment(apt['id'])
-                                    else:
-                                        # Verificar se houve alteração
-                                        apt_update = appointments_to_keep[apt['id']]
-                                        if (apt_update['old_date'] != apt_update['new_date'] or 
-                                            apt_update['old_time'] != apt_update['new_time']):
-                                            # Atualizar reposição
-                                            conn = sqlite3.connect("pilates.db")
-                                            cursor = conn.cursor()
-                                            new_day_of_week = datetime.strptime(apt_update['new_date'], '%Y-%m-%d').weekday() + 1
-                                            cursor.execute('''
-                                                UPDATE appointments 
-                                                SET date = ?, time = ?, day_of_week = ?
-                                                WHERE id = ?
-                                            ''', (apt_update['new_date'], apt_update['new_time'], new_day_of_week, apt['id']))
-                                            conn.commit()
-                                            conn.close()
-                                
-                                # Atualizar horários fixos
-                                # 1. Remover horários desmarcados
-                                for idx, sched in enumerate(current_schedules):
-                                    if idx not in schedules_to_keep:
-                                        db.delete_client_schedule(sched['id'])
-                                
-                                # 2. Atualizar horários modificados
-                                for idx, update_info in schedules_to_keep.items():
-                                    if (update_info['old_day'] != update_info['new_day'] or 
-                                        update_info['old_time'] != update_info['new_time']):
-                                        # Deletar antigo e criar novo
-                                        db.delete_client_schedule(update_info['schedule_id'])
-                                        db.create_client_schedule(client_id, update_info['new_day'], update_info['new_time'])
-                                    
-                                    # Atualizar equipamento
-                                    conn = sqlite3.connect("pilates.db")
-                                    cursor = conn.cursor()
-                                    cursor.execute('''
-                                        UPDATE client_schedule 
-                                        SET equipment_id = ?
-                                        WHERE client_id = ? AND day_of_week = ? AND time = ?
-                                    ''', (update_info['new_equipment_id'], client_id, 
-                                         update_info['new_day'], update_info['new_time']))
-                                    conn.commit()
-                                    conn.close()
-                                
-                                # 3. Adicionar novo horário se solicitado
-                                if st.session_state.show_add_new and new_schedule:
-                                    if db.create_client_schedule(client_id, new_schedule['day'], new_schedule['time']):
-                                        # Atualizar equipamento do novo
-                                        conn = sqlite3.connect("pilates.db")
-                                        cursor = conn.cursor()
-                                        cursor.execute('''
-                                            UPDATE client_schedule 
-                                            SET equipment_id = ?
-                                            WHERE client_id = ? AND day_of_week = ? AND time = ?
-                                        ''', (new_schedule['equipment_id'], client_id, 
-                                             new_schedule['day'], new_schedule['time']))
-                                        conn.commit()
-                                        conn.close()
-                                        st.session_state.show_add_new = False
-                                    else:
-                                        st.error("Erro ao adicionar novo horário")
-                                        success = False
-                                
-                                if success:
-                                    st.success("✅ Horários atualizados com sucesso!")
-                            
-                            if success:
-                                # Limpar estado de edição
-                                del st.session_state['editing_client_id']
-                                if 'editing_from_day' in st.session_state:
-                                    del st.session_state['editing_from_day']
-                                if 'editing_from_time' in st.session_state:
-                                    del st.session_state['editing_from_time']
-                                st.rerun()
-                    
-                    with col_cancel:
-                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                            del st.session_state['editing_client_id']
-                            if 'editing_from_day' in st.session_state:
-                                del st.session_state['editing_from_day']
-                            if 'editing_from_time' in st.session_state:
-                                del st.session_state['editing_from_time']
-                            st.rerun()
-    else:
-        st.info("Nenhum agendamento para esta semana")
+                        st.info("ℹ️ Nenhuma alteração detectada")
+
+                    time.sleep(0.5)
+                    st.session_state.show_edit_appointment_form = False
+                    st.rerun()
+
+            with col_cancel:
+                if st.button("❌ Cancelar", use_container_width=True):
+                    st.session_state.show_edit_appointment_form = False
+                    st.rerun()
     
     # Formulário de novo agendamento
     if st.session_state.get('show_appointment_form', False):
@@ -1651,6 +721,7 @@ def appointments_tab():
                     st.rerun()
 
 def clients_tab():
+    editing_date = st.session_state.get('editing_date')
     """Aba de gerenciamento de clientes"""
     col1, col2 = st.columns([3, 1])
     
@@ -2028,28 +1099,24 @@ def clients_tab():
                             )
                         
                         with col_time:
+                            # Sempre permitir edição do horário, independente do checkbox
+                            try:
+                                time_index = hours.index(horario_atual)
+                            except:
+                                time_index = 9
+                            
+                            horario = st.selectbox(
+                                "Horário:",
+                                hours,
+                                index=time_index,
+                                key=f"time_edit_{dia_key}_{client['id']}",
+                                label_visibility="collapsed",
+                                help=f"Horário para {dia_label}" if not dia_selecionado else None
+                            )
+                            
+                            # Sempre salvar o horário no dicionário, mas só usar se dia estiver selecionado
                             if dia_selecionado:
-                                try:
-                                    time_index = hours.index(horario_atual)
-                                except:
-                                    time_index = 9
-                                
-                                horario = st.selectbox(
-                                    "Horário:",
-                                    hours,
-                                    index=time_index,
-                                    key=f"time_edit_{dia_key}_{client['id']}",
-                                    label_visibility="collapsed"
-                                )
                                 dias_horarios_edit[dia_num] = horario
-                            else:
-                                st.text_input(
-                                    "Horário:",
-                                    value="--:--",
-                                    disabled=True,
-                                    key=f"time_edit_{dia_key}_disabled_{client['id']}",
-                                    label_visibility="collapsed"
-                                )
                     
                     # Status do contrato
                     contrato_ativo_edit = st.checkbox(
@@ -2060,7 +1127,21 @@ def clients_tab():
                     )
                     
                     st.markdown("---")
-                    st.subheader("💰 Informações Financeiras")
+                    st.subheader("💰 Valor Mensal")
+                    
+                    # Buscar valor mensal do cliente nas contas mais recentes
+                    contas_cliente = db.get_contas_receber(client_id=client['id'])
+                    valor_atual = 0.0
+                    
+                    if contas_cliente:
+                        # Pegar o valor da conta mais recente para mostrar como valor atual
+                        conta_recente = max(contas_cliente, key=lambda x: x['data_vencimento'])
+                        valor_atual = conta_recente['valor']
+                        st.info(f"💵 Valor mensal atual: **R$ {valor_atual:.2f}**")
+                    else:
+                        st.info("💵 Nenhum valor mensal definido ainda")
+                    
+                    st.markdown("---")
                     st.info("💡 Preencha os campos abaixo. Ao salvar, contas futuras serão criadas/atualizadas automaticamente.")
                     
                     col_fin1, col_fin2, col_fin3 = st.columns(3)
@@ -2095,216 +1176,9 @@ def clients_tab():
                             key=f"qtd_meses_contrato_{client['id']}"
                         )
                     
-                    col_tipo1, col_tipo2, col_tipo3 = st.columns(3)
-                    
-                    with col_tipo1:
-                        tipo_fisio = st.checkbox(
-                            "🏥 Fisioterapia",
-                            key=f"fisio_{client['id']}"
-                        )
-                    
-                    with col_tipo2:
-                        tipo_pilates = st.checkbox(
-                            "🧘 Pilates",
-                            key=f"pilates_{client['id']}"
-                        )
-                    
-                    with col_tipo3:
-                        recorrente = st.checkbox(
-                            "🔄 Recorrente",
-                            value=True,
-                            key=f"recorrente_{client['id']}",
-                            help="Gera contas para os próximos meses automaticamente"
-                        )
-                    
-                    # Data de início do contrato
-                    data_inicio_contrato = st.date_input(
-                        "Data de Início do Contrato:",
-                        value=date.today(),
-                        key=f"data_inicio_{client['id']}"
-                    )
-                    
-                    # Informação sobre o que será criado
-                    if valor_mensalidade > 0:
-                        if tipo_fisio and tipo_pilates:
-                            tipo_plano = "Fisioterapia + Pilates"
-                        elif tipo_fisio:
-                            tipo_plano = "Fisioterapia"
-                        elif tipo_pilates:
-                            tipo_plano = "Pilates"
-                        else:
-                            tipo_plano = "Mensalidade"
-                        
-                        meses_criar = qtd_meses_contrato if qtd_meses_contrato > 0 else (12 if recorrente else 1)
-                        st.success(f"📋 Ao salvar: {tipo_plano} | R$ {valor_mensalidade:.2f}/mês | {meses_criar} mês(es) | {qtd_sessoes_contratadas} sessões/mês")
-                    
-                    st.markdown("---")
-                    
-                    col_save, col_delete = st.columns(2)
-                    
-                    with col_save:
-                        if st.form_submit_button("💾 Salvar Alterações", use_container_width=True):
-                            import json
-                            import bcrypt
-                            
-                            # Atualizar dados do cliente incluindo novos campos
-                            conn = sqlite3.connect(db.db_path)
-                            cursor = conn.cursor()
-                            
-                            try:
-                                # Preparar dias_semana JSON
-                                dias_semana_json_edit = json.dumps({str(k): v for k, v in dias_horarios_edit.items()})
-                                
-                                if edit_password:
-                                    # Se senha fornecida, atualizar com nova senha
-                                    hashed = bcrypt.hashpw(edit_password.encode('utf-8'), bcrypt.gensalt())
-                                    cursor.execute('''
-                                        UPDATE users 
-                                        SET name=?, phone=?, email=?, password=?, medical_history=?,
-                                            data_inicio_contrato=?, tipo_contrato=?, 
-                                            sessoes_contratadas=?, dias_semana=?, contrato_ativo=?
-                                        WHERE id=?
-                                    ''', (
-                                        edit_name, edit_phone, edit_email, hashed, edit_medical,
-                                        data_inicio_edit.strftime('%Y-%m-%d'),
-                                        tipo_contrato_clean_edit,
-                                        sessoes_contratadas_edit if tipo_contrato_clean_edit == 'sessoes' else 0,
-                                        dias_semana_json_edit,
-                                        1 if contrato_ativo_edit else 0,
-                                        client['id']
-                                    ))
-                                else:
-                                    # Atualizar sem mexer na senha
-                                    cursor.execute('''
-                                        UPDATE users 
-                                        SET name=?, phone=?, email=?, medical_history=?,
-                                            data_inicio_contrato=?, tipo_contrato=?, 
-                                            sessoes_contratadas=?, dias_semana=?, contrato_ativo=?
-                                        WHERE id=?
-                                    ''', (
-                                        edit_name, edit_phone, edit_email, edit_medical,
-                                        data_inicio_edit.strftime('%Y-%m-%d'),
-                                        tipo_contrato_clean_edit,
-                                        sessoes_contratadas_edit if tipo_contrato_clean_edit == 'sessoes' else 0,
-                                        dias_semana_json_edit,
-                                        1 if contrato_ativo_edit else 0,
-                                        client['id']
-                                    ))
-                                
-                                conn.commit()
-                                conn.close()
-                                
-                                # Regenerar appointments com novos horários
-                                if dias_horarios_edit:
-                                    appointments_created = db.gerar_appointments_cliente(client['id'], dias_horarios_edit)
-                                    st.success(f"✅ Cliente atualizado! {appointments_created} agendamentos regenerados.")
-                                else:
-                                    st.success(f"✅ Cliente atualizado!")
-                                
-                            except Exception as e:
-                                conn.rollback()
-                                conn.close()
-                                st.error(f"❌ Erro ao atualizar: {str(e)}")
-                                import traceback
-                                traceback.print_exc()
-                            
-                            # Criar/atualizar contas a receber automaticamente
-                            if valor_mensalidade > 0:
-                                # Determinar tipo de plano
-                                if tipo_fisio and tipo_pilates:
-                                    tipo_plano = "Fisioterapia + Pilates"
-                                elif tipo_fisio:
-                                    tipo_plano = "Fisioterapia"
-                                elif tipo_pilates:
-                                    tipo_plano = "Pilates"
-                                else:
-                                    tipo_plano = "Mensalidade"
-                                
-                                quantidade = qtd_sessoes_contratadas if qtd_sessoes_contratadas > 0 else 1
-                                
-                                # Verificar se é recorrente
-                                is_recorrente = st.session_state.get(f"recorrente_{client['id']}", True)
-                                
-                                if is_recorrente:
-                                    # Criar ou atualizar contas mensais recorrentes
-                                    from dateutil.relativedelta import relativedelta
-                                    data_base = st.session_state.get(f"data_inicio_{client['id']}", date.today())
-                                    meses_criar = qtd_meses_contrato if qtd_meses_contrato > 0 else 12
-                                    
-                                    # Buscar contas existentes para este cliente
-                                    contas_existentes = db.get_contas_receber(client_id=client['id'])
-                                    hoje = date.today()
-                                    
-                                    contas_criadas = 0
-                                    contas_atualizadas = 0
-                                    
-                                    for mes in range(meses_criar):
-                                        data_venc = data_base + relativedelta(months=mes)
-                                        data_venc_str = data_venc.strftime('%Y-%m-%d')
-                                        
-                                        # Verificar se já existe uma conta para este mês
-                                        conta_existente = next((c for c in contas_existentes if c['data_vencimento'] == data_venc_str), None)
-                                        
-                                        if conta_existente:
-                                            # Se a data já passou, não alterar
-                                            if data_venc < hoje:
-                                                continue
-                                            # Se for futura, atualizar valor e tipo_plano usando SQL direto
-                                            try:
-                                                conn = sqlite3.connect('pilates.db')
-                                                conn.execute('''
-                                                    UPDATE contas_receber 
-                                                    SET tipo_plano=?, valor=?, quantidade=?
-                                                    WHERE id=?
-                                                ''', (tipo_plano, valor_mensalidade, quantidade, conta_existente['id']))
-                                                conn.commit()
-                                                conn.close()
-                                                contas_atualizadas += 1
-                                            except:
-                                                pass
-                                        else:
-                                            # Criar nova conta
-                                            if db.create_conta_receber(
-                                                client['id'], tipo_plano, valor_mensalidade, 
-                                                quantidade, data_venc_str, 
-                                                f"Recorrente - Mês {mes + 1}/{meses_criar}"
-                                            ):
-                                                contas_criadas += 1
-                                    
-                                    if contas_criadas > 0 or contas_atualizadas > 0:
-                                        msg = []
-                                        if contas_criadas > 0:
-                                            msg.append(f"{contas_criadas} nova(s)")
-                                        if contas_atualizadas > 0:
-                                            msg.append(f"{contas_atualizadas} atualizada(s)")
-                                        st.success(f"✅ Contas a receber: {' e '.join(msg)}")
-                                    elif contas_existentes:
-                                        st.info("ℹ️ Todas as contas já existem e estão atualizadas")
-                                else:
-                                    # Criar conta única
-                                    data_venc_str = st.session_state.get(f"data_inicio_{client['id']}", date.today()).strftime('%Y-%m-%d')
-                                    
-                                    if db.create_conta_receber(
-                                        client['id'], tipo_plano, valor_mensalidade, 
-                                        quantidade, data_venc_str, 
-                                        f"Criado automaticamente via cadastro do cliente"
-                                    ):
-                                        st.success(f"✅ Conta a receber criada: {tipo_plano}")
-                                    else:
-                                        st.error("❌ Erro ao criar conta a receber")
-                            
-                            st.rerun()
-                    
-                    with col_delete:
-                        if st.form_submit_button("🗑️ Excluir Cliente", use_container_width=True, type="secondary"):
-                            if db.delete_client(client['id']):
-                                st.success("Cliente excluído!")
-                                st.rerun()
-                            else:
-                                st.error("Erro ao excluir cliente")
-                    
-                    # Formulário de edição
-                    if st.session_state.get(f'edit_client_form_{client["id"]}', False):
+                        # Exibir bloco de presença/equipamento/observação apenas se appointment e from_time existirem
+                # Formulário de edição
+                if st.session_state.get(f'edit_client_form_{client["id"]}', False):
                         with st.form(f"edit_client_{client['id']}"):
                             st.write("**Editar Cliente**")
                             
@@ -3082,16 +1956,37 @@ def contas_receber_section():
             filter_status = st.selectbox("Filtrar por Status:", 
                 ["Todos", "Pendente", "Pago"])
         with col_f2:
-            filter_client = st.text_input("Filtrar por Cliente:")
+            # Buscar clientes para o filtro
+            clients = db.get_clients()
+            client_filter_options = ["Todos"] + [f"{c['name']} - {c['phone']}" for c in clients]
+            
+            # Usar filtro automático se veio da seção de clientes
+            default_filter = st.session_state.get('filter_client_financeiro', '')
+            default_index = 0  # "Todos" por padrão
+            if default_filter:
+                # Procurar o cliente correspondente
+                for i, option in enumerate(client_filter_options):
+                    if default_filter.lower() in option.lower():
+                        default_index = i
+                        break
+            
+            selected_client_filter = st.selectbox("Filtrar por Cliente:", 
+                client_filter_options, index=default_index)
+            
+            # Limpar filtro automático após usar
+            if 'filter_client_financeiro' in st.session_state:
+                del st.session_state.filter_client_financeiro
         
         # Aplicar filtros
         contas_filtradas = contas
         if filter_status != "Todos":
             contas_filtradas = [c for c in contas_filtradas 
                               if c['status'].lower() == filter_status.lower()]
-        if filter_client:
+        if selected_client_filter != "Todos":
+            # Extrair o nome do cliente da opção selecionada (antes do " - ")
+            client_name = selected_client_filter.split(" - ")[0]
             contas_filtradas = [c for c in contas_filtradas 
-                              if filter_client.lower() in c['client_name'].lower()]
+                              if client_name.lower() in c['client_name'].lower()]
         
         st.markdown(f"**Total de contas: {len(contas_filtradas)}**")
         
@@ -4154,4 +3049,5 @@ def attendance_history_tab():
         st.info("📭 Nenhum registro de presença/falta encontrado nos últimos 3 meses.")
 
 if __name__ == "__main__":
+
     main()
