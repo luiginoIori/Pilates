@@ -280,20 +280,49 @@ def appointments_tab():
     st.info(f"📅 {day_name} - {selected_date.strftime('%d/%m/%Y')}")
 
     # Buscar todos os appointments do dia selecionado
-    conn = sqlite3.connect("pilates.db")
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT a.id, a.client_id, a.time, a.attended, a.equipamento, a.observacao,
-               u.name as client_name
-        FROM appointments a
-        JOIN users u ON a.client_id = u.id
-        WHERE a.date = ?
-        ORDER BY a.time
-    ''', (selected_date_str,))
-    
-    appointments_today = cursor.fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect("pilates.db")
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT a.id, a.client_id, a.time, a.attended, a.equipamento, a.observacao,
+                   u.name as client_name
+            FROM appointments a
+            JOIN users u ON a.client_id = u.id
+            WHERE a.date = ?
+            ORDER BY a.time
+        ''', (selected_date_str,))
+        
+        appointments_today = cursor.fetchall()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        st.error(f"Erro ao buscar agendamentos: {str(e)}")
+        st.info("Tentando query alternativa sem JOIN...")
+        try:
+            conn = sqlite3.connect("pilates.db")
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, client_id, time, attended, equipamento, observacao
+                FROM appointments
+                WHERE date = ?
+                ORDER BY time
+            ''', (selected_date_str,))
+            
+            appointments_data = cursor.fetchall()
+            
+            # Buscar nomes dos clientes separadamente
+            appointments_today = []
+            for apt in appointments_data:
+                cursor.execute('SELECT name FROM users WHERE id = ?', (apt[1],))
+                client_name = cursor.fetchone()
+                if client_name:
+                    appointments_today.append(apt + (client_name[0],))
+            
+            conn.close()
+        except Exception as e2:
+            st.error(f"Erro na query alternativa: {str(e2)}")
+            appointments_today = []
+            conn.close()
     
     # Organizar por horário
     appointments_by_hour = defaultdict(list)
