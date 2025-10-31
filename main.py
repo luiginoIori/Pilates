@@ -256,9 +256,8 @@ def master_dashboard():
         attendance_history_tab()
 
 def appointments_tab():
-    """Aba de gerenciamento de agendamentos - Layout de duas colunas com calendário clicável"""
+    """Aba de gerenciamento de agendamentos com seletor de data"""
     from datetime import datetime, timedelta
-    import calendar
     from collections import defaultdict
     import sqlite3
     
@@ -266,100 +265,14 @@ def appointments_tab():
     equipment_list = db.get_equipment() if hasattr(db, 'get_equipment') else []
     equipment_options = ['N/A'] + [e['name'] for e in equipment_list] if equipment_list else ['N/A']
     
-    # ESTRUTURA DE DUAS COLUNAS
-    col_grade, col_calendar = st.columns([2, 1])
-    
-    # ========== COLUNA 2: CALENDÁRIO SELETOR ==========
-    with col_calendar:
-        st.markdown("### � Selecione o Dia")
-        
-        # Obter data atual
-        today = get_brasilia_today()
-        
-        # Inicializar selected_date no session_state se não existir
-        if 'selected_date_cal' not in st.session_state:
-            st.session_state.selected_date_cal = today
-        
-        # Seletores de mês e ano
-        col_mes, col_ano = st.columns(2)
-        with col_mes:
-            mes_atual = st.session_state.selected_date_cal.month
-            mes_selecionado = st.selectbox(
-                "Mês:",
-                options=list(range(1, 13)),
-                index=mes_atual - 1,
-                format_func=lambda x: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-                                      "Jul", "Ago", "Set", "Out", "Nov", "Dez"][x-1],
-                key="cal_month_select"
-            )
-        
-        with col_ano:
-            ano_atual = st.session_state.selected_date_cal.year
-            anos = list(range(2024, 2031))
-            ano_selecionado = st.selectbox(
-                "Ano:",
-                options=anos,
-                index=anos.index(ano_atual) if ano_atual in anos else 1,
-                key="cal_year_select"
-            )
-        
-        # Criar calendário do mês
-        cal = calendar.monthcalendar(ano_selecionado, mes_selecionado)
-        dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-        
-        # Cabeçalho do calendário
-        cols_header = st.columns(7)
-        for i, dia in enumerate(dias_semana):
-            with cols_header[i]:
-                st.markdown(f"**{dia}**")
-        
-        # Dias do mês
-        for semana in cal:
-            cols_week = st.columns(7)
-            for i, dia in enumerate(semana):
-                with cols_week[i]:
-                    if dia == 0:
-                        st.write("")  # Dia vazio
-                    else:
-                        # Criar data para este dia
-                        dia_date = date(ano_selecionado, mes_selecionado, dia)
-                        
-                        # Verificar se é o dia selecionado
-                        is_selected = (st.session_state.selected_date_cal == dia_date)
-                        
-                        # Verificar se é hoje
-                        is_today = (dia_date == today)
-                        
-                        # Botão para o dia
-                        button_kwargs = {
-                            "label": str(dia),
-                            "key": f"cal_day_{ano_selecionado}_{mes_selecionado}_{dia}",
-                            "use_container_width": True
-                        }
-                        
-                        if is_selected:
-                            button_kwargs["type"] = "primary"
-                        elif is_today:
-                            button_kwargs["type"] = "secondary"
-                        
-                        if st.button(**button_kwargs):
-                            st.session_state.selected_date_cal = dia_date
-                            st.rerun()
-    
-    # Legendas
-    col_leg1, col_leg2 = st.columns(2)
-    with col_leg1:
-        st.caption("🔵 Dia selecionado")
-    with col_leg2:
-        st.caption("⚪ Hoje")
-    
-    st.markdown("---")
-    
-    # ========== GRADE DE HORÁRIOS ==========
+    # Seletor de data simples
     st.markdown("### 📋 Grade de Horários Diária")
+    selected_date = st.date_input(
+        "📅 Selecione o Dia:",
+        value=get_brasilia_today(),
+        key="selected_date_input"
+    )
     
-    # Usar a data selecionada do calendário
-    selected_date = st.session_state.selected_date_cal
     selected_date_str = selected_date.strftime('%Y-%m-%d')
     day_name = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 
                 'Sexta-feira', 'Sábado', 'Domingo'][selected_date.weekday()]
